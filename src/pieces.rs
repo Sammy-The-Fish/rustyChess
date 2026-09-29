@@ -232,20 +232,30 @@ impl Pieces {
             }
         }
 
-        // for each possible move modify the board and check if the king is in check
+        // for each possible move modify the board and check if it results in the king being in check
         let mut result = Vec::new();
         for piece_move in potential_result {
             let mut modification: HashMap<Pos, &Pieces> = HashMap::new();
             let piece = board.get_piece_at_pos(pos);
             let color = self.color().unwrap();
 
+            // if we are moving the king, use the updated king position
+            let king_pos = match piece {
+                Pieces::King{..} => { piece_move },
+                _ => {board.get_king_position(color)}
+            };
+
             // add new place to the hashmap
             modification.insert(piece_move, piece);
             // replace old pos with empty
             modification.insert(pos, &Pieces::Empty);
 
-            println!("checking for checks with hasmap: {:?}", modification);
-            if !is_pos_potentially_checked(board.get_king_position(color), board, color, modification) {
+            if !is_pos_potentially_checked(
+                king_pos,
+                board,
+                color,
+                modification,
+            ) {
                 result.push(piece_move);
             }
         }
@@ -292,7 +302,19 @@ impl Pieces {
             }
         }
         result
+
     }
+
+
+    pub fn on_move(&mut self) {
+        match self {
+            Pieces::Pawn { side, is_first_move } => {
+                *is_first_move = false;
+            },
+            _ => ()
+        }
+    }
+
 }
 
 #[derive(Debug, PartialEq)]
@@ -316,8 +338,6 @@ fn is_pos_potentially_checked(
     side: &PieceColor,
     modifications: HashMap<Pos, &Pieces>,
 ) -> bool {
-
-    // TODO: fix issue where taking piece into check is allowed
 
     // check for pawns
     let direction = { if *side == PieceColor::White { -1 } else { 1 } };
@@ -401,14 +421,17 @@ fn is_pos_potentially_checked(
                 None => &board.get_piece_at_pos((target_x, target_y)),
             };
 
-            println!("scanning for queens have found {:?}, at {:?}", target, (target_x, target_y));
+            println!(
+                "scanning for Rooks have found {:?}, at {:?}",
+                target,
+                (target_x, target_y)
+            );
             match target {
                 Pieces::Queen { side: piece_side } => {
                     if piece_side != side {
                         return true;
                     }
                     break;
-
                 }
                 Pieces::Rook { side: piece_side } => {
                     if piece_side != side {
@@ -427,7 +450,7 @@ fn is_pos_potentially_checked(
                 }
                 _ => {
                     break 'scan;
-                },
+                }
             }
         }
     }
@@ -482,7 +505,7 @@ fn is_pos_potentially_checked(
                 }
                 _ => {
                     break 'scan;
-                },
+                }
             }
         }
     }

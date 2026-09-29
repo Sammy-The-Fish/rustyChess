@@ -79,7 +79,11 @@ impl Board {
             };
         }
 
+        // board modifications to make testing easier
         board[6][4] = Pieces::Queen { side: PieceColor::Black };
+        board[0][3] = Pieces::Empty;
+        board[0][5] = Pieces::Empty;
+
 
         Board { board }
 
@@ -171,12 +175,18 @@ impl Board {
         &self.board[pos.0][pos.1]
     }
 
+    pub fn get_mut_piece_at_pos(&mut self, pos: (usize, usize)) -> &mut Pieces {
+        &mut self.board[pos.0][pos.1]
+    }
+
     
 
     pub fn move_piece(&mut self, from: Pos, to: Pos) {
-        let from_piece = self.get_piece_at_pos(from);
-        let to_piece = self.get_piece_at_pos(to);
+        let from_piece = self.get_mut_piece_at_pos(from);
+        from_piece.on_move();
 
+        let from_piece = self.get_piece_at_pos(from);
+        let to_piece  = self.get_piece_at_pos(to);
         let from_colour = from_piece.color().unwrap();
 
         if let Some(to_color) = to_piece.color() {
