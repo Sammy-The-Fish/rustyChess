@@ -11,9 +11,11 @@ pub enum Pieces {
     Pawn {
         side: PieceColor,
         is_first_move: bool,
+        has_just_jumped: bool,
     },
     Rook {
         side: PieceColor,
+        is_first_move: bool,
     },
     Knight {
         side: PieceColor,
@@ -26,19 +28,26 @@ pub enum Pieces {
     },
     King {
         side: PieceColor,
+        is_first_move: bool,
     },
 }
 
-impl PartialEq for Pieces {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Pawn { .. }, Self::Pawn { .. }) => true,
-            (Self::Rook { .. }, Self::Rook { .. }) => true,
-            (Self::Knight { .. }, Self::Knight { .. }) => true,
-            (Self::Bishop { .. }, Self::Bishop { .. }) => true,
-            (Self::Queen { .. }, Self::Queen { .. }) => true,
-            (Self::King { .. }, Self::King { .. }) => true,
-            _ => core::mem::discriminant(self) == core::mem::discriminant(other),
+pub enum MoveType {
+    Normal,
+    Castle,
+    EnPassant,
+}
+
+pub struct Move {
+    pub destination: Pos,
+    pub move_type: MoveType,
+}
+
+impl Move {
+    fn new_normal(destination: Pos) -> Move {
+        Move {
+            destination,
+            move_type: MoveType::Normal,
         }
     }
 }
@@ -47,40 +56,35 @@ impl Pieces {
     pub fn symbol(&self) -> char {
         match self {
             Pieces::Empty => ' ',
-            Pieces::Pawn {
-                side: _,
-                is_first_move,
-            } => 'P',
-            Pieces::Rook { side: _ } => 'R',
+            Pieces::Pawn { side: _, .. } => 'P',
+            Pieces::Rook { side: _, .. } => 'R',
             Pieces::Knight { side: _ } => 'N',
             Pieces::Bishop { side: _ } => 'B',
             Pieces::Queen { side: _ } => 'Q',
-            Pieces::King { side: _ } => 'K',
+            Pieces::King { side: _, .. } => 'K',
         }
     }
 
     pub fn color(&self) -> Option<&PieceColor> {
         match self {
             Pieces::Empty => None,
-            Pieces::Pawn {
-                side: color,
-                is_first_move,
-            } => Some(color),
-            Pieces::Rook { side: color } => Some(color),
+            Pieces::Pawn { side: color, .. } => Some(color),
+            Pieces::Rook { side: color, .. } => Some(color),
             Pieces::Knight { side: color } => Some(color),
             Pieces::Bishop { side: color } => Some(color),
             Pieces::Queen { side: color } => Some(color),
-            Pieces::King { side: color } => Some(color),
+            Pieces::King { side: color, .. } => Some(color),
         }
     }
 
-    pub fn find_moves(&self, board: &board::Board, pos: (usize, usize)) -> Vec<(usize, usize)> {
+    pub fn find_moves(&self, board: &board::Board, pos: (usize, usize)) -> Vec<Move> {
         let mut potential_result = Vec::new();
         match self {
             Pieces::Empty => (),
             Pieces::Pawn {
                 side,
                 is_first_move,
+                ..
             } => {
                 // do pawns move up or down
                 let direction = {
@@ -96,7 +100,7 @@ impl Pieces {
                     if target_x < 8 {
                         let target = board.get_piece_at_pos((target_x, pos.1));
                         if target.color() == None {
-                            potential_result.push((target_x, pos.1));
+                            potential_result.push(Move::new_normal((target_x, pos.1)));
                         }
                     }
                 };
@@ -107,7 +111,7 @@ impl Pieces {
                         if target_x < 8 {
                             let target = board.get_piece_at_pos((target_x, pos.1));
                             if target.color() == None {
-                                potential_result.push((target_x, pos.1));
+                                potential_result.push(Move::new_normal((target_x, pos.1)));
                             }
                         }
                     };
@@ -132,14 +136,43 @@ impl Pieces {
                     let target = board.get_piece_at_pos((target_x, target_y));
                     if let Some(color) = target.color() {
                         if color != side {
-                            potential_result.push((target_x, target_y));
+                            potential_result.push(Move::new_normal((target_x, target_y)));
                         }
                     }
                 }
 
-                // TODO en passant
+                // check for en passant
+                let enpassant_checks = [(0, -1), (0, 1)];
+                for check in enpassant_checks {
+                    // ensures targets cannot be < 0
+                    let Some(target_pos) = board::add_positions(pos, check) else {
+                        continue;
+                    };
+
+                    let target = board.get_piece_at_pos(target_pos);
+                    match target {
+                        Pieces::Pawn {
+                            side: other_side,
+                            is_first_move: _,
+                            has_just_jumped: has_other_just_jumped,
+                        } => {
+                            println!("checking pawn for en passant, has pawn jumped: {has_other_just_jumped}");
+                            if *has_other_just_jumped && *other_side != *side {
+                                let move_target = board::add_positions(target_pos, direction);
+                                
+                                // en passant should only occur in the middle of the board, therefore unwrapping should never lead to an error
+                                // checked square should also always be clear, therefore also does not need to be checked
+                                potential_result.push(Move { destination: move_target.unwrap(), move_type: MoveType::EnPassant });
+                            }
+                        }
+                        _ => (),
+                    }
+                }
             }
-            Pieces::Rook { side } => {
+            Pieces::Rook {
+                side,
+                is_first_move,
+            } => {
                 let directions = [(1, 0), (0, 1), (-1, 0), (0, -1)];
 
                 potential_result = self.scan_in_directions(&directions, pos, board, side);
@@ -173,10 +206,10 @@ impl Pieces {
                         let target = board.get_piece_at_pos((target_x, target_y));
                         if let Some(color) = target.color() {
                             if color != side {
-                                potential_result.push((target_x, target_y));
+                                potential_result.push(Move::new_normal((target_x, target_y)));
                             }
                         } else {
-                            potential_result.push((target_x, target_y));
+                            potential_result.push(Move::new_normal((target_x, target_y)));
                         }
                     }
                 }
@@ -200,7 +233,10 @@ impl Pieces {
 
                 potential_result = self.scan_in_directions(&directions, pos, board, side);
             }
-            Pieces::King { side } => {
+            Pieces::King {
+                side,
+                is_first_move,
+            } => {
                 let moves: Vec<(isize, isize)> = (-1..=1)
                     .flat_map(|x| (-1..=1).map(move |y| (x, y)))
                     .filter(|&(x, y)| (x, y) != (0, 0))
@@ -216,19 +252,61 @@ impl Pieces {
                     match target {
                         Pieces::Empty => {
                             if !is_pos_checked(square, board, side) {
-                                potential_result.push(square);
+                                potential_result.push(Move::new_normal(square));
                             }
                         }
                         _ => (),
                     }
                     if let Some(color) = target.color() {
                         if color != side {
-                            potential_result.push(square);
+                            potential_result.push(Move::new_normal(square));
                         }
                     }
                 }
 
-                // TODO: Caslting
+                // castling
+                if *is_first_move {
+                    // scan in both horizontal directions to check for rooks
+                    let dirs = [(0, 1), (0, -1)];
+
+                    for dir in dirs {
+                        let mut counter = 0;
+                        'scan: loop {
+                            counter += 1;
+                            let piece_move = (dir.0 * counter, dir.1 * counter);
+
+                            let Some(target) = board::add_positions(pos, piece_move) else {
+                                break 'scan;
+                            };
+
+                            let piece = board.get_piece_at_pos(target);
+                            match piece {
+                                Pieces::Empty => {
+                                    continue;
+                                }
+                                Pieces::Rook {
+                                    side: piece_side,
+                                    is_first_move,
+                                } => {
+                                    if side == piece_side && *is_first_move {
+                                        println!("valid castle found for piece at {:?}", pos);
+                                        potential_result.push(Move {
+                                            destination: board::add_positions(
+                                                pos,
+                                                (dir.0 * 2, dir.1 * 2),
+                                            )
+                                            .unwrap(),
+                                            move_type: MoveType::Castle,
+                                        })
+                                    }
+                                }
+                                _ => {
+                                    break 'scan;
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -241,21 +319,16 @@ impl Pieces {
 
             // if we are moving the king, use the updated king position
             let king_pos = match piece {
-                Pieces::King{..} => { piece_move },
-                _ => {board.get_king_position(color)}
+                Pieces::King { .. } => piece_move.destination,
+                _ => board.get_king_position(color),
             };
 
             // add new place to the hashmap
-            modification.insert(piece_move, piece);
+            modification.insert(piece_move.destination, piece);
             // replace old pos with empty
             modification.insert(pos, &Pieces::Empty);
 
-            if !is_pos_potentially_checked(
-                king_pos,
-                board,
-                color,
-                modification,
-            ) {
+            if !is_pos_potentially_checked(king_pos, board, color, modification) {
                 result.push(piece_move);
             }
         }
@@ -268,7 +341,7 @@ impl Pieces {
         pos: (usize, usize),
         board: &Board,
         side: &PieceColor,
-    ) -> Vec<(usize, usize)> {
+    ) -> Vec<Move> {
         let mut result = Vec::new();
         for dir in directions {
             let mut counter = 0;
@@ -293,28 +366,52 @@ impl Pieces {
                 let target = board.get_piece_at_pos((target_x, target_y));
                 if let Some(color) = target.color() {
                     if color != side {
-                        result.push((target_x, target_y));
+                        result.push(Move::new_normal((target_x, target_y)));
                     }
                     break 'scan;
                 } else {
-                    result.push((target_x, target_y));
+                    result.push(Move::new_normal((target_x, target_y)));
                 }
             }
         }
         result
-
     }
 
-
-    pub fn on_move(&mut self) {
+    pub fn on_move(&mut self, from: Pos, to: Pos) {
         match self {
-            Pieces::Pawn { side, is_first_move } => {
+            Pieces::Pawn {
+                side: _,
+                is_first_move,
+                has_just_jumped,
+            } => {
+                if *has_just_jumped {
+                    *has_just_jumped = false;
+                }
+
+                let diff = (from.0 as isize - to.0 as isize).abs();
+                println!("pawn hopped with difference: {diff}");
+                if *is_first_move && diff == 2 {
+                    *has_just_jumped = true;
+                }
+
                 *is_first_move = false;
-            },
-            _ => ()
+                
+            }
+            Pieces::Rook {
+                side: _,
+                is_first_move,
+            } => {
+                *is_first_move = false;
+            }
+            Pieces::King {
+                side: _,
+                is_first_move,
+            } => {
+                *is_first_move = false;
+            }
+            _ => (),
         }
     }
-
 }
 
 #[derive(Debug, PartialEq)]
@@ -338,7 +435,6 @@ fn is_pos_potentially_checked(
     side: &PieceColor,
     modifications: HashMap<Pos, &Pieces>,
 ) -> bool {
-
     // check for pawns
     let direction = { if *side == PieceColor::White { -1 } else { 1 } };
 
@@ -420,12 +516,6 @@ fn is_pos_potentially_checked(
                 Some(piece) => piece,
                 None => &board.get_piece_at_pos((target_x, target_y)),
             };
-
-            println!(
-                "scanning for Rooks have found {:?}, at {:?}",
-                target,
-                (target_x, target_y)
-            );
             match target {
                 Pieces::Queen { side: piece_side } => {
                     if piece_side != side {
@@ -433,13 +523,17 @@ fn is_pos_potentially_checked(
                     }
                     break;
                 }
-                Pieces::Rook { side: piece_side } => {
+                Pieces::Rook {
+                    side: piece_side, ..
+                } => {
                     if piece_side != side {
                         return true;
                     }
                     break;
                 }
-                Pieces::King { side: piece_side } => {
+                Pieces::King {
+                    side: piece_side, ..
+                } => {
                     if counter == 1 && piece_side != side {
                         return true;
                     }
@@ -494,7 +588,9 @@ fn is_pos_potentially_checked(
                     }
                     break;
                 }
-                Pieces::King { side: piece_side } => {
+                Pieces::King {
+                    side: piece_side, ..
+                } => {
                     if counter == 1 && piece_side != side {
                         return true;
                     }

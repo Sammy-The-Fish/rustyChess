@@ -1,10 +1,12 @@
-use crate::{PieceColor, Pieces, Pos, SIZE, pieces};
+use crate::{
+    PieceColor, Pieces, Pos, SIZE,
+    pieces::{self, Move, MoveType},
+};
 use colored::{Color, Colorize};
 
 pub struct Board {
     board: [[Pieces; SIZE]; SIZE],
 }
-
 
 impl Board {
     pub fn new() -> Board {
@@ -14,6 +16,7 @@ impl Board {
         // set up black back rank
         board[0][0] = Pieces::Rook {
             side: (PieceColor::White),
+            is_first_move: true,
         };
         board[0][1] = Pieces::Knight {
             side: (PieceColor::White),
@@ -26,6 +29,7 @@ impl Board {
         };
         board[0][4] = Pieces::King {
             side: (PieceColor::White),
+            is_first_move: true,
         };
         board[0][5] = Pieces::Bishop {
             side: (PieceColor::White),
@@ -35,6 +39,7 @@ impl Board {
         };
         board[0][7] = Pieces::Rook {
             side: (PieceColor::White),
+            is_first_move: true,
         };
 
         // set up white pawns
@@ -42,12 +47,14 @@ impl Board {
             board[1][i] = Pieces::Pawn {
                 side: (PieceColor::White),
                 is_first_move: true,
+                has_just_jumped: false,
             };
         }
 
         // set up white back rank
         board[SIZE - 1][0] = Pieces::Rook {
             side: (PieceColor::Black),
+            is_first_move: true,
         };
         board[SIZE - 1][1] = Pieces::Knight {
             side: (PieceColor::Black),
@@ -60,6 +67,7 @@ impl Board {
         };
         board[SIZE - 1][4] = Pieces::King {
             side: (PieceColor::Black),
+            is_first_move: true,
         };
         board[SIZE - 1][5] = Pieces::Bishop {
             side: (PieceColor::Black),
@@ -69,6 +77,7 @@ impl Board {
         };
         board[SIZE - 1][7] = Pieces::Rook {
             side: (PieceColor::Black),
+            is_first_move: true,
         };
 
         // set up black pawns
@@ -76,31 +85,33 @@ impl Board {
             board[SIZE - 2][i] = Pieces::Pawn {
                 side: (PieceColor::Black),
                 is_first_move: true,
+                has_just_jumped: false,
             };
         }
 
         // board modifications to make testing easier
-        board[6][4] = Pieces::Queen { side: PieceColor::Black };
-        board[0][3] = Pieces::Empty;
-        board[0][5] = Pieces::Empty;
-
+        board[6][4] = Pieces::Queen {
+            side: PieceColor::Black,
+        };
+        board[4][1] = Pieces::Pawn { side: PieceColor::Black, is_first_move: false, has_just_jumped: true };
+        board[4][2] = Pieces::Pawn { side: PieceColor::White, is_first_move: false, has_just_jumped: false };
 
         Board { board }
-
-        
     }
     // might implement get_king better later
     pub fn get_king_position(&self, side: &PieceColor) -> Pos {
         for i in 0..SIZE {
             for j in 0..SIZE {
-                let piece = self.get_piece_at_pos((i,j));
+                let piece = self.get_piece_at_pos((i, j));
                 match piece {
-                    Pieces::King { side: piece_side} => {
+                    Pieces::King {
+                        side: piece_side, ..
+                    } => {
                         if piece_side == side {
-                            return (i, j)
+                            return (i, j);
                         }
-                    },
-                    _ => ()
+                    }
+                    _ => (),
                 }
             }
         }
@@ -111,7 +122,7 @@ impl Board {
         let mut result = Vec::new();
         for i in 0..SIZE {
             for j in 0..SIZE {
-                let piece = self.get_piece_at_pos((i,j));
+                let piece = self.get_piece_at_pos((i, j));
                 if let Some(color) = piece.color() {
                     if color == side {
                         result.push((i, j));
@@ -179,40 +190,85 @@ impl Board {
         &mut self.board[pos.0][pos.1]
     }
 
-    
-
-    pub fn move_piece(&mut self, from: Pos, to: Pos) {
+    pub fn move_piece(&mut self, from: Pos, to: Pos, move_type: &MoveType) {
         let from_piece = self.get_mut_piece_at_pos(from);
-        from_piece.on_move();
+        from_piece.on_move(from, to);
 
-        let from_piece = self.get_piece_at_pos(from);
-        let to_piece  = self.get_piece_at_pos(to);
+        let from_piece: &Pieces = self.get_piece_at_pos(from);
+        let to_piece = self.get_piece_at_pos(to);
+
         let from_colour = from_piece.color().unwrap();
+        match move_type {
+            MoveType::Normal => {
+                if let Some(to_color) = to_piece.color() {
+                    if from_colour == to_color {
+                        panic!()
+                    }
+                }
 
-        if let Some(to_color) = to_piece.color() {
-            if from_colour == to_color {
-                panic!()
+                let from_piece = std::mem::replace(&mut self.board[from.0][from.1], Pieces::Empty);
+
+                self.board[to.0][to.1] = from_piece;
+            }
+            MoveType::Castle => {
+                let direction: isize = to.1 as isize - from.1 as isize;
+
+                // check which direction to castle in
+                let is_kingside_castle = match direction {
+                    2 => true,
+                    -2 => false,
+                    _ => {
+                        panic!()
+                    }
+                };
+                let rook_pos = if is_kingside_castle {
+                    (to.0, 7)
+                } else {
+                    (to.0, 0)
+                };
+
+                let rook_target = if is_kingside_castle {
+                    (to.0, 5)
+                } else {
+                    (to.0, 3)
+                };
+
+                // swap pieces
+                let rook =
+                    std::mem::replace(&mut self.board[rook_pos.0][rook_pos.1], Pieces::Empty);
+                let from_piece = std::mem::replace(&mut self.board[from.0][from.1], Pieces::Empty);
+                self.board[to.0][to.1] = from_piece;
+                self.board[rook_target.0][rook_target.1] = rook;
+            }
+            MoveType::EnPassant => {
+                println!("moving piece to {:?}", to);
+                let pawn_pos = match from_colour {
+                    PieceColor::Black => (to.0 + 1, to.1),
+                    PieceColor::White => (to.0 - 1, to.1),
+                };
+
+                println!("clearing pawn at: {:?}", pawn_pos);
+                // clear taken pawn
+                self.board[pawn_pos.0][pawn_pos.1] = Pieces::Empty;
+
+                // move pawn normally
+                let from_piece = std::mem::replace(&mut self.board[from.0][from.1], Pieces::Empty);
+
+                self.board[to.0][to.1] = from_piece;
             }
         }
-
-
-        let from_piece = std::mem::replace(&mut self.board[from.0][from.1], Pieces::Empty);
-
-        self.board[to.0][to.1] = from_piece;
     }
 }
-
 
 pub fn add_positions(pos1: Pos, pos2: (isize, isize)) -> Option<Pos> {
     let result = ((pos1.0 as isize + pos2.0), (pos1.1 as isize + pos2.1));
 
-    if result.0 < 0 || result.0 >= SIZE as isize{
-        return None
+    if result.0 < 0 || result.0 >= SIZE as isize {
+        return None;
     }
     if result.1 < 0 || result.1 >= SIZE as isize {
-        return None
+        return None;
     }
 
     Some((result.0 as usize, result.1 as usize))
-
 }

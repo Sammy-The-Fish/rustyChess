@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use colored::{Color, ColoredString, Colorize};
+use colored::Colorize;
 use pieces::{PieceColor, Pieces};
 
 mod board;
@@ -27,9 +27,7 @@ fn main() {
         let mut valid_moves = false;
         // check for legal moves
         for piece in board.get_all_pieces(&turn) {
-
             let piece_moves = board.get_piece_at_pos(piece).find_moves(&board, piece);
-            println!("piece_moves: {:?}", piece_moves);
 
             if piece_moves.len() > 0 {
                 valid_moves = true;
@@ -88,12 +86,19 @@ fn main() {
         let moves = board
             .get_piece_at_pos(selected_square)
             .find_moves(&board, selected_square);
-        board.print_board_highlighted(&moves);
         if moves.len() == 0 {
             continue;
         }
 
-        let result = loop {
+        let mut destinations = Vec::new();
+
+        for piece_move in &moves {
+            destinations.push(piece_move.destination);
+        }
+
+        board.print_board_highlighted(&destinations);
+
+        let result = 'outer: loop {
             print!("where to move  (blank to change piece)>> ",);
             io::stdout().flush().unwrap();
             let mut input = String::new();
@@ -108,26 +113,26 @@ fn main() {
                 continue;
             };
 
-            if !moves.contains(&pos) {
-                println!("{}", "invalid move, please select a valid move".red());
-                continue;
+            for piece_move in &moves {
+                if piece_move.destination == pos {
+                    break 'outer  Some(piece_move)
+                }
             }
 
-            break Some(pos);
+            println!("{}", "cannot move there".red());
         };
 
-        let Some(target_square) = result else {
+        let Some(piece_move) = result else {
             continue;
         };
 
-        board.move_piece(selected_square, target_square);
+        board.move_piece(selected_square, piece_move.destination, &piece_move.move_type);
 
         turn = turn.other();
     };
 
     print!("\x1B[2J\x1B[1;1H");
     io::stdout().flush().unwrap();
-    
 
     let victory_text = match result {
         Result::BlackWin => "=======BLACK VICTORY!!!!!=======".green(),
@@ -137,8 +142,6 @@ fn main() {
 
     println!("{}", victory_text);
     board.print_board();
-
-
 }
 
 fn get_header(side: &PieceColor, checked: bool) -> String {
@@ -147,14 +150,12 @@ fn get_header(side: &PieceColor, checked: bool) -> String {
         PieceColor::White => "White",
     };
 
-
-
     let mut check_string = "".red();
     if checked {
         check_string = "\n=== IN CHECK ===".red()
     }
 
-    format!("========{side} to play======={check_string}", )
+    format!("========{side} to play======={check_string}",)
 }
 
 fn parse_input(input: &str) -> Option<(usize, usize)> {
