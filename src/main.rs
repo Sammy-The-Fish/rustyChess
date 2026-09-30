@@ -3,6 +3,8 @@ use std::io::{self, Write};
 use colored::Colorize;
 use pieces::{PieceColor, Pieces};
 
+use crate::pieces::{Move, MoveType, Promotion};
+
 mod board;
 mod pieces;
 
@@ -37,10 +39,10 @@ fn main() {
 
         // check win cons
         // checkmate
-        if (checked && !valid_moves) {
+        if checked && !valid_moves {
             match turn {
                 PieceColor::Black => break Result::WhiteWin,
-                PieceColor::White => break Result::WhiteWin,
+                PieceColor::White => break Result::BlackWin,
             }
         }
 
@@ -122,11 +124,58 @@ fn main() {
             println!("{}", "cannot move there".red());
         };
 
-        let Some(piece_move) = result else {
+        let Some(selected_move) = result else {
             continue;
         };
 
-        board.move_piece(selected_square, piece_move.destination, &piece_move.move_type);
+
+        let move_type = match selected_move.move_type {
+            pieces::PotentialMoveType::Normal => MoveType::Normal,
+            pieces::PotentialMoveType::Castle => MoveType::Castle,
+            pieces::PotentialMoveType::EnPassant => MoveType::EnPassant,
+            pieces::PotentialMoveType::Promotion => {
+                println!("{}", "------PROMOOTION-------".green());
+                loop {
+                    print!("what to promote to (R, N, B, Q)>> ");
+                    io::stdout().flush().unwrap();
+                                let mut input = String::new();
+
+                    io::stdin().read_line(&mut input).unwrap();
+
+                if input.trim().len() != 1 {
+                    println!("{}", "invalid input".red());
+                    continue;
+                }
+
+                match input.chars().next().unwrap() {
+                    'R' => {
+                        break MoveType::Promotion { piece: Promotion::Rook };
+                    },
+                    'N' => {
+                        break MoveType::Promotion { piece: Promotion::Knight };
+                    },
+                    'B' => {
+                        break MoveType::Promotion { piece: Promotion::Bishop };
+                    },
+                    'Q' => {
+                        break MoveType::Promotion { piece: Promotion::Queen };
+                    }
+                    _ => {
+                        println!("{}", "invalid piece".red());
+                    }
+                }
+
+                }
+            },
+        };
+
+        let current_move = Move {
+            from: selected_square,
+            to: selected_move.destination,
+            move_type: move_type
+        };
+
+        board.move_piece(current_move);
 
         turn = turn.other();
     };
@@ -184,3 +233,5 @@ enum Result {
     WhiteWin,
     Draw,
 }
+
+

@@ -1,3 +1,4 @@
+
 use crate::{
     PieceColor, Pieces, Pos, SIZE,
     pieces::{self, Move, MoveType},
@@ -90,11 +91,6 @@ impl Board {
         }
 
         // board modifications to make testing easier
-        board[6][4] = Pieces::Queen {
-            side: PieceColor::Black,
-        };
-        board[4][1] = Pieces::Pawn { side: PieceColor::Black, is_first_move: false, has_just_jumped: true };
-        board[4][2] = Pieces::Pawn { side: PieceColor::White, is_first_move: false, has_just_jumped: false };
 
         Board { board }
     }
@@ -144,7 +140,7 @@ impl Board {
             square += 1;
             print!("{} ", i + 1);
 
-            for j in (0..SIZE) {
+            for j in 0..SIZE {
                 let piece = self.get_piece_at_pos((i, j));
 
                 // get colour
@@ -190,7 +186,10 @@ impl Board {
         &mut self.board[pos.0][pos.1]
     }
 
-    pub fn move_piece(&mut self, from: Pos, to: Pos, move_type: &MoveType) {
+    pub fn move_piece(&mut self, piece_move: Move) {
+        let from = piece_move.from;
+        let to = piece_move.to;
+
         let from_piece = self.get_mut_piece_at_pos(from);
         from_piece.on_move(from, to);
 
@@ -198,7 +197,7 @@ impl Board {
         let to_piece = self.get_piece_at_pos(to);
 
         let from_colour = from_piece.color().unwrap();
-        match move_type {
+        match piece_move.move_type {
             MoveType::Normal => {
                 if let Some(to_color) = to_piece.color() {
                     if from_colour == to_color {
@@ -255,6 +254,29 @@ impl Board {
                 let from_piece = std::mem::replace(&mut self.board[from.0][from.1], Pieces::Empty);
 
                 self.board[to.0][to.1] = from_piece;
+            }
+            MoveType::Promotion { piece } => {
+                if let Some(to_color) = to_piece.color() {
+                    if from_colour == to_color {
+                        panic!()
+                    }
+                }
+
+                let new_color = match from_colour {
+                    PieceColor::Black => PieceColor::Black,
+                    PieceColor::White => PieceColor::White,
+                };
+                let _ = std::mem::replace(&mut self.board[from.0][from.1], Pieces::Empty);
+
+
+                let promoted_piece = match piece {
+                    pieces::Promotion::Queen => Pieces::Queen { side: new_color },
+                    pieces::Promotion::Rook => Pieces::Rook { side: new_color, is_first_move: false },
+                    pieces::Promotion::Knight => Pieces::Knight { side: new_color },
+                    pieces::Promotion::Bishop => Pieces::Bishop { side: new_color },
+                };
+
+                self.board[to.0][to.1] = promoted_piece;
             }
         }
     }

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, iter::Map, ops::Index, result, vec};
+use std::{collections::HashMap};
 
 use crate::{
     Pos, SIZE,
@@ -32,29 +32,65 @@ pub enum Pieces {
     },
 }
 
-pub enum MoveType {
+pub enum PotentialMoveType {
     Normal,
     Castle,
     EnPassant,
+    Promotion
 }
+
+
+
+pub enum Promotion {
+    Queen,
+    Rook,
+    Knight,
+    Bishop
+}
+
+
+pub struct PotentialMove {
+    pub destination: Pos,
+    pub move_type: PotentialMoveType,
+}
+
+
 
 pub struct Move {
-    pub destination: Pos,
-    pub move_type: MoveType,
+    pub to: Pos,
+    pub from: Pos,
+    pub move_type: MoveType
 }
 
-impl Move {
-    fn new_normal(destination: Pos) -> Move {
-        Move {
+pub enum MoveType{
+    Normal,
+    Castle,
+    EnPassant,
+    Promotion { piece: Promotion }
+}
+
+impl PotentialMove {
+    fn new_normal(destination: Pos) -> PotentialMove {
+        PotentialMove {
             destination,
-            move_type: MoveType::Normal,
+            move_type: PotentialMoveType::Normal,
         }
     }
+
+    // pub fn to_move(&self, from: Pos) -> Move{
+    //     Move {
+    //         from,
+    //         to: self.destination,
+
+    //     }
+    // }
 }
+
+
 
 impl Pieces {
     pub fn symbol(&self) -> char {
-        match self {
+        match self { 
             Pieces::Empty => ' ',
             Pieces::Pawn { side: _, .. } => 'P',
             Pieces::Rook { side: _, .. } => 'R',
@@ -77,7 +113,7 @@ impl Pieces {
         }
     }
 
-    pub fn find_moves(&self, board: &board::Board, pos: (usize, usize)) -> Vec<Move> {
+    pub fn find_moves(&self, board: &board::Board, pos: (usize, usize)) -> Vec<PotentialMove> {
         let mut potential_result = Vec::new();
         match self {
             Pieces::Empty => (),
@@ -94,13 +130,22 @@ impl Pieces {
                         (-1, 0)
                     }
                 };
+                let promotion_rank = match side {
+                                PieceColor::Black => 0,
+                                PieceColor::White => 7,
+                            };
 
                 // check in front
                 if let Some(target_x) = pos.0.checked_add_signed(direction.0) {
                     if target_x < 8 {
                         let target = board.get_piece_at_pos((target_x, pos.1));
                         if target.color() == None {
-                            potential_result.push(Move::new_normal((target_x, pos.1)));
+                            
+                            if target_x == promotion_rank {
+                                potential_result.push(PotentialMove { destination: (target_x, pos.1), move_type: PotentialMoveType::Promotion  });
+                            }else {
+                                potential_result.push(PotentialMove::new_normal((target_x, pos.1)));
+                            }
                         }
                     }
                 };
@@ -111,7 +156,7 @@ impl Pieces {
                         if target_x < 8 {
                             let target = board.get_piece_at_pos((target_x, pos.1));
                             if target.color() == None {
-                                potential_result.push(Move::new_normal((target_x, pos.1)));
+                                potential_result.push(PotentialMove::new_normal((target_x, pos.1)));
                             }
                         }
                     };
@@ -136,7 +181,11 @@ impl Pieces {
                     let target = board.get_piece_at_pos((target_x, target_y));
                     if let Some(color) = target.color() {
                         if color != side {
-                            potential_result.push(Move::new_normal((target_x, target_y)));
+                            if target_x == promotion_rank {
+                                potential_result.push(PotentialMove{destination: (target_x, target_y), move_type: PotentialMoveType::Promotion });
+                            }else {
+                                potential_result.push(PotentialMove::new_normal((target_x, target_y)));
+                            }
                         }
                     }
                 }
@@ -156,13 +205,12 @@ impl Pieces {
                             is_first_move: _,
                             has_just_jumped: has_other_just_jumped,
                         } => {
-                            println!("checking pawn for en passant, has pawn jumped: {has_other_just_jumped}");
                             if *has_other_just_jumped && *other_side != *side {
                                 let move_target = board::add_positions(target_pos, direction);
                                 
                                 // en passant should only occur in the middle of the board, therefore unwrapping should never lead to an error
                                 // checked square should also always be clear, therefore also does not need to be checked
-                                potential_result.push(Move { destination: move_target.unwrap(), move_type: MoveType::EnPassant });
+                                potential_result.push(PotentialMove { destination: move_target.unwrap(), move_type: PotentialMoveType::EnPassant });
                             }
                         }
                         _ => (),
@@ -171,7 +219,7 @@ impl Pieces {
             }
             Pieces::Rook {
                 side,
-                is_first_move,
+                ..
             } => {
                 let directions = [(1, 0), (0, 1), (-1, 0), (0, -1)];
 
@@ -206,10 +254,10 @@ impl Pieces {
                         let target = board.get_piece_at_pos((target_x, target_y));
                         if let Some(color) = target.color() {
                             if color != side {
-                                potential_result.push(Move::new_normal((target_x, target_y)));
+                                potential_result.push(PotentialMove::new_normal((target_x, target_y)));
                             }
                         } else {
-                            potential_result.push(Move::new_normal((target_x, target_y)));
+                            potential_result.push(PotentialMove::new_normal((target_x, target_y)));
                         }
                     }
                 }
@@ -252,14 +300,14 @@ impl Pieces {
                     match target {
                         Pieces::Empty => {
                             if !is_pos_checked(square, board, side) {
-                                potential_result.push(Move::new_normal(square));
+                                potential_result.push(PotentialMove::new_normal(square));
                             }
                         }
                         _ => (),
                     }
                     if let Some(color) = target.color() {
                         if color != side {
-                            potential_result.push(Move::new_normal(square));
+                            potential_result.push(PotentialMove::new_normal(square));
                         }
                     }
                 }
@@ -289,14 +337,13 @@ impl Pieces {
                                     is_first_move,
                                 } => {
                                     if side == piece_side && *is_first_move {
-                                        println!("valid castle found for piece at {:?}", pos);
-                                        potential_result.push(Move {
+                                        potential_result.push(PotentialMove {
                                             destination: board::add_positions(
                                                 pos,
                                                 (dir.0 * 2, dir.1 * 2),
                                             )
                                             .unwrap(),
-                                            move_type: MoveType::Castle,
+                                            move_type: PotentialMoveType::Castle,
                                         })
                                     }
                                 }
@@ -341,7 +388,7 @@ impl Pieces {
         pos: (usize, usize),
         board: &Board,
         side: &PieceColor,
-    ) -> Vec<Move> {
+    ) -> Vec<PotentialMove> {
         let mut result = Vec::new();
         for dir in directions {
             let mut counter = 0;
@@ -366,11 +413,11 @@ impl Pieces {
                 let target = board.get_piece_at_pos((target_x, target_y));
                 if let Some(color) = target.color() {
                     if color != side {
-                        result.push(Move::new_normal((target_x, target_y)));
+                        result.push(PotentialMove::new_normal((target_x, target_y)));
                     }
                     break 'scan;
                 } else {
-                    result.push(Move::new_normal((target_x, target_y)));
+                    result.push(PotentialMove::new_normal((target_x, target_y)));
                 }
             }
         }
@@ -389,7 +436,6 @@ impl Pieces {
                 }
 
                 let diff = (from.0 as isize - to.0 as isize).abs();
-                println!("pawn hopped with difference: {diff}");
                 if *is_first_move && diff == 2 {
                     *has_just_jumped = true;
                 }
@@ -436,7 +482,7 @@ fn is_pos_potentially_checked(
     modifications: HashMap<Pos, &Pieces>,
 ) -> bool {
     // check for pawns
-    let direction = { if *side == PieceColor::White { -1 } else { 1 } };
+    let direction = { if *side == PieceColor::White { 1 } else { -1 } };
 
     let checks = [(direction, 1), (direction, -1)];
 
@@ -606,11 +652,10 @@ fn is_pos_potentially_checked(
         }
     }
 
-    println!("this has returned false");
     false
 }
 
 pub fn is_pos_checked(pos: Pos, board: &Board, side: &PieceColor) -> bool {
-    let mut map: HashMap<Pos, &Pieces> = HashMap::new();
+    let map: HashMap<Pos, &Pieces> = HashMap::new();
     is_pos_potentially_checked(pos, board, side, map)
 }
