@@ -1,9 +1,7 @@
-
 use crate::{
-    PieceColor, Pieces, Pos, SIZE,
+    GameResult, PieceColor, Pieces, Pos, SIZE,
     pieces::{self, Move, MoveType},
 };
-use colored::{Color, Colorize};
 
 pub struct Board {
     board: [[Pieces; SIZE]; SIZE],
@@ -129,53 +127,47 @@ impl Board {
         result
     }
 
-    pub fn print_board_highlighted(&self, highlight: &[(usize, usize)]) {
-        let mut square: u32 = 0;
-
-        println!("   A  B  C  D  E  F  G  H");
-
-        // prints from bottom to top
-        for i in (0..SIZE).rev() {
-            // offset grid by 1 each row to get proper checkerboard
-            square += 1;
-            print!("{} ", i + 1);
-
-            for j in 0..SIZE {
-                let piece = self.get_piece_at_pos((i, j));
-
-                // get colour
-                let text_color = match piece.color() {
-                    Some(color) => match color {
-                        PieceColor::Black => Color::Black,
-                        PieceColor::White => Color::White,
-                    },
-                    None => Color::White,
-                };
-                let text = format!(" {} ", piece.symbol());
-
-                // select background color
-                let mut background = Color::Cyan;
-                if (square % 2) == 0 {
-                    background = Color::Blue;
-                }
-
-                for pos in highlight {
-                    // adjust position due to printing from bottom to top
-                    if (i, j) == *pos {
-                        background = Color::Red
-                    }
-                }
-
-                print!("{}", text.color(text_color).on_color(background));
-
-                square += 1;
-            }
-            print!("\n");
+    pub fn check_win_cons(&self, side: &PieceColor) -> Option<GameResult> {
+        // check for check
+        let mut checked = false;
+        let king = self.get_king_position(side);
+        if pieces::is_pos_checked(king, self, side) {
+            checked = true
         }
+
+        let mut valid_moves = false;
+        // check for legal moves
+        for piece in self.get_all_pieces(side) {
+            let piece_moves = self.get_piece_at_pos(piece).find_moves(self, piece);
+
+            if piece_moves.len() > 0 {
+                valid_moves = true;
+                break;
+            }
+        }
+
+        // check win cons
+        // checkmate
+        if checked && !valid_moves {
+            match side {
+                PieceColor::Black => return Some(GameResult::WhiteWin),
+                PieceColor::White => return Some(GameResult::BlackWin),
+            }
+        }
+
+        // stalemate
+        if !valid_moves {
+            return Some(GameResult::Draw);
+        }
+        None
     }
 
-    pub fn print_board(&self) {
-        self.print_board_highlighted(&[]);
+    pub fn is_checked(&self, side: &PieceColor) -> bool {
+        let king = self.get_king_position(side);
+        if pieces::is_pos_checked(king, &self, side) {
+            return true
+        }
+        false
     }
 
     pub fn get_piece_at_pos(&self, pos: (usize, usize)) -> &Pieces {
@@ -268,10 +260,12 @@ impl Board {
                 };
                 let _ = std::mem::replace(&mut self.board[from.0][from.1], Pieces::Empty);
 
-
                 let promoted_piece = match piece {
                     pieces::Promotion::Queen => Pieces::Queen { side: new_color },
-                    pieces::Promotion::Rook => Pieces::Rook { side: new_color, is_first_move: false },
+                    pieces::Promotion::Rook => Pieces::Rook {
+                        side: new_color,
+                        is_first_move: false,
+                    },
                     pieces::Promotion::Knight => Pieces::Knight { side: new_color },
                     pieces::Promotion::Bishop => Pieces::Bishop { side: new_color },
                 };
