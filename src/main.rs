@@ -34,6 +34,10 @@ fn main() {
         // check for check
         let checked = board.is_checked(&turn);
 
+        let border_color = if checked {Color::Red} else {Color::White};
+
+        let checked_message =  if checked {" - in check"} else {""};
+
         // check win cons
         if let Some(result) = board.check_win_cons(&turn) {
             break result;
@@ -41,8 +45,11 @@ fn main() {
 
         print!("\x1B[2J\x1B[1;1H");
         io::stdout().flush().unwrap();
-        println!("{}", get_header(&turn, checked));
-        print_board(&board);
+        let title = match turn {
+            PieceColor::White => "white to play",
+            PieceColor::Black => "black to play",
+        };
+        print_board(&board, &format!("{}{}", &title, &checked_message), border_color);
 
         // select piece to move
         let user_input = loop {
@@ -131,7 +138,7 @@ fn main() {
             destinations.push(piece_move.destination);
         }
 
-        print_board_highlighted(&board, &destinations);
+        print_board_highlighted(&board, &destinations, "select destination", border_color);
 
         let result = 'outer: loop {
             print!("where to move  (blank to change piece)>> ",);
@@ -222,28 +229,22 @@ fn main() {
     print!("\x1B[2J\x1B[1;1H");
     io::stdout().flush().unwrap();
 
+
+    let victory_color = match result {
+        GameResult::Draw => Color::Blue,
+        _ => Color::Green
+    };
+
     let victory_text = match result {
-        GameResult::BlackWin => "=======BLACK VICTORY!!!!!=======".green(),
-        GameResult::WhiteWin => "=======WHITE VICTORY!!!!!=======".green(),
-        GameResult::Draw => "=======STALEMATE=======".blue(),
+        GameResult::BlackWin => "BLACK VICTORY!!!!!",
+        GameResult::WhiteWin => "WHITE VICTORY!!!!!",
+        GameResult::Draw => "STALEMATE",
     };
 
-    println!("{}", victory_text);
-    print_board(&board);
-}
 
-fn get_header(side: &PieceColor, checked: bool) -> String {
-    let side = match side {
-        PieceColor::Black => "Black",
-        PieceColor::White => "White",
-    };
 
-    let mut check_string = "".red();
-    if checked {
-        check_string = "\n=== IN CHECK ===".red()
-    }
-
-    format!("========{side} to play======={check_string}",)
+    // println!("{}", victory_text);
+    print_board(&board, &victory_text.color(victory_color), victory_color);
 }
 
 fn parse_input(input: &str) -> Option<Pos> {
@@ -299,17 +300,37 @@ $$ |  $$\ $$ |  $$ |$$ |      $$\   $$ |$$\   $$ |
     io::stdin().read_line(&mut input).unwrap();
 }
 
-fn print_board_highlighted(board: &Board, highlight: &[(usize, usize)]) {
-    let mut square: u32 = 0;
 
-    println!("   A  B  C  D  E  F  G  H");
+
+
+fn print_board_highlighted(board: &Board, highlight: &[(usize, usize)], title: &str, border_color: Color) {
+    let mut square: u32 = 0;
+    const BORDER_LENGTH: i32 = 30;
+    let wings = (BORDER_LENGTH - title.len() as i32) / 2;
+
+    print!("{}", "┏".color(border_color));
+
+    for _ in 1..wings {
+        print!("{}", "━".color(border_color));
+    }
+    print!("{}", title.color(border_color));
+
+    for _ in 1..wings {
+        print!("{}", "━".color(border_color));
+    }
+    if title.len() % 2 == 1 {
+        print!("{}", "━".color(border_color));
+    }
+
+    print!("{}", "┓\n".color(border_color));
+
+    println!("{}    A  B  C  D  E  F  G  H  {}", "┃".color(border_color), "┃".color(border_color));
 
     // prints from bottom to top
     for i in (0..SIZE).rev() {
         // offset grid by 1 each row to get proper checkerboard
         square += 1;
-        print!("{} ", i + 1);
-
+        print!("{} {} ", "┃".color(border_color),i + 1);
         for j in 0..SIZE {
             let piece = board.get_piece_at_pos((i, j));
 
@@ -340,10 +361,11 @@ fn print_board_highlighted(board: &Board, highlight: &[(usize, usize)]) {
 
             square += 1;
         }
-        print!("\n");
+        print!("{}", " ┃\n".color(border_color));
     }
+    print!("{}", "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n".color(border_color));
 }
 
-fn print_board(board: &Board) {
-    print_board_highlighted(board, &[]);
+fn print_board(board: &Board, title: &str, border_color: Color) {
+    print_board_highlighted(board, &[], title, border_color);
 }
