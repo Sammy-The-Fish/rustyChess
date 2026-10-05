@@ -139,11 +139,12 @@ impl Pieces {
                             };
 
                 // check in front
+                let mut piece_in_front = true;
                 if let Some(target_x) = pos.0.checked_add_signed(direction.0) {
                     if target_x < 8 {
                         let target = board.get_piece_at_pos((target_x, pos.1));
                         if target.color() == None {
-                            
+                            piece_in_front = false;
                             if target_x == promotion_rank {
                                 potential_result.push(PotentialMove { destination: (target_x, pos.1), move_type: PotentialMoveType::Promotion  });
                             }else {
@@ -154,7 +155,7 @@ impl Pieces {
                 };
 
                 // check 2 in front for fist move
-                if *is_first_move {
+                if *is_first_move && !piece_in_front{
                     if let Some(target_x) = pos.0.checked_add_signed(direction.0 * 2) {
                         if target_x < 8 {
                             let target = board.get_piece_at_pos((target_x, pos.1));
