@@ -54,7 +54,7 @@ fn main() {
         // select piece to move
         let user_input = loop {
             let mut input = String::new();
-            print!("input piece to move, offer draw (D) or resign (R) >> ");
+            print!("input piece to move e.g. a1, offer draw (D) or resign (R) >> ");
             io::stdout().flush().unwrap();
             io::stdin().read_line(&mut input).unwrap();
 
