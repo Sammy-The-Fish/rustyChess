@@ -79,31 +79,11 @@ impl PotentialMove {
             move_type: PotentialMoveType::Normal,
         }
     }
-
-    // pub fn to_move(&self, from: Pos) -> Move{
-    //     Move {
-    //         from,
-    //         to: self.destination,
-
-    //     }
-    // }
 }
 
 
 
 impl Pieces {
-    pub fn symbol(&self) -> char {
-        match self { 
-            Pieces::Empty => ' ',
-            Pieces::Pawn { side: _, .. } => 'P',
-            Pieces::Rook { side: _, .. } => 'R',
-            Pieces::Knight { side: _ } => 'N',
-            Pieces::Bishop { side: _ } => 'B',
-            Pieces::Queen { side: _ } => 'Q',
-            Pieces::King { side: _, .. } => 'K',
-        }
-    }
-
     pub fn color(&self) -> Option<&PieceColor> {
         match self {
             Pieces::Empty => None,

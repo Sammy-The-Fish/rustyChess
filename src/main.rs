@@ -1,15 +1,14 @@
 use std::io::{self, Write};
 
+use crate::{
+    board::{Board, DrawReason, GameResult},
+    pieces::{Move, MoveType, Promotion},
+};
 use colored::{
     Color::{self},
     Colorize,
 };
 use pieces::{PieceColor, Pieces};
-
-use crate::{
-    board::Board,
-    pieces::{Move, MoveType, Promotion},
-};
 
 mod board;
 mod pieces;
@@ -23,6 +22,20 @@ enum UserInput {
     Move(Pos),
 }
 
+impl Pieces {
+    pub fn display(&self) -> char {
+        match self { 
+            Pieces::Empty => ' ',
+            Pieces::Pawn { side: _, .. } => 'P',
+            Pieces::Rook { side: _, .. } => 'R',
+            Pieces::Knight { side: _ } => 'N',
+            Pieces::Bishop { side: _ } => 'B',
+            Pieces::Queen { side: _ } => 'Q',
+            Pieces::King { side: _, .. } => 'K',
+        }
+    }
+}
+
 fn main() {
     preamble();
 
@@ -34,9 +47,9 @@ fn main() {
         // check for check
         let checked = board.is_checked(&turn);
 
-        let border_color = if checked {Color::Red} else {Color::White};
+        let border_color = if checked { Color::Red } else { Color::White };
 
-        let checked_message =  if checked {" - in check"} else {""};
+        let checked_message = if checked { " - in check" } else { "" };
 
         // check win cons
         if let Some(result) = board.check_win_cons(&turn) {
@@ -49,19 +62,42 @@ fn main() {
             PieceColor::White => "white to play",
             PieceColor::Black => "black to play",
         };
-        print_board(&board, &format!("{}{}", &title, &checked_message), border_color);
+        print_board(
+            &board,
+            &format!("{}{}", &title, &checked_message),
+            border_color,
+        );
 
         // select piece to move
         let user_input = loop {
             let mut input = String::new();
-            print!("input piece to move e.g. a1, offer draw (D) or resign (R) >> ");
+            print!(
+                "input piece to move e.g. a1, claim or offer a draw (D), resign (R) or help (H) >> "
+            );
             io::stdout().flush().unwrap();
             io::stdin().read_line(&mut input).unwrap();
 
             if input.trim().len() == 1 {
-                match &input.chars().next().unwrap() {
+                match &input.chars().next().unwrap().to_ascii_uppercase() {
                     'D' => break UserInput::OfferDraw,
                     'R' => break UserInput::Resign,
+                    'H' => {
+                        println!(
+                            "HELP:
+To Move:
+ - first select a piece to move e.g a2
+ - select a piece to move to, all possile squares to move are highlighted in red
+In addition to moving you can resign, this will make your opponent win.
+Or you can claim / offer a draw, this will draw the game if the followinf conditions are met:
+ - the position currently in has been repeated 3 times in the game so far
+ - it has been 50 moves since the last piece was captured
+if these conditions are not met, the opponent will be asked if they agree to a draw.
+Finally a draw will be mandated if:
+ - the position currently in has been repeated 5 times in the game so far
+ - it has been 75 moves since the last piece was captured"
+                        );
+                        continue;
+                    }
                     _ => (),
                 }
             }
@@ -91,6 +127,10 @@ fn main() {
                 PieceColor::White => break GameResult::BlackWin,
             },
             UserInput::OfferDraw => {
+                if let Some(result) = board.check_claimed_draw_cons() {
+                    break result;
+                }
+
                 let agreed = loop {
                     print!("DO BOTH PLAYERS AGREE TO A DRAW (Y/N) >> ");
                     io::stdout().flush().unwrap();
@@ -113,7 +153,9 @@ fn main() {
                     println!("{}", "indalid input".red());
                 };
                 if agreed {
-                    break GameResult::Draw;
+                    break GameResult::Draw {
+                        reason: DrawReason::Agreed,
+                    };
                 } else {
                     continue;
                 }
@@ -229,19 +271,31 @@ fn main() {
     print!("\x1B[2J\x1B[1;1H");
     io::stdout().flush().unwrap();
 
-
     let victory_color = match result {
-        GameResult::Draw => Color::Blue,
-        _ => Color::Green
+        GameResult::Draw { .. } => Color::Blue,
+        _ => Color::Green,
     };
 
     let victory_text = match result {
         GameResult::BlackWin => "BLACK VICTORY!!!!!",
         GameResult::WhiteWin => "WHITE VICTORY!!!!!",
-        GameResult::Draw => "STALEMATE",
+        GameResult::Draw{reason} => {
+            let draw_text = "DRAW - ";
+
+            let reason_text = match reason {
+                DrawReason::Stalemate => "Stalemate",
+                DrawReason::Agreed => "Agreed",
+                DrawReason::ThreefoldRepeat => "Threefold Repeat",
+                DrawReason::FivefoldRepeat => "Fivefold Repeat",
+                DrawReason::InsufficientMaterial => "Insufficient Material",
+                DrawReason::FiftyMoves => "50 Moves",
+                DrawReason::SeventyFiveMoves => "75 Moves",
+            };
+
+
+            &format!("{}{}", draw_text, reason_text)
+        }
     };
-
-
 
     // println!("{}", victory_text);
     print_board(&board, &victory_text.color(victory_color), victory_color);
@@ -266,12 +320,6 @@ fn parse_input(input: &str) -> Option<Pos> {
     let index1 = (digit.unwrap() - 1) as usize;
 
     Some((index1, index2))
-}
-
-enum GameResult {
-    BlackWin,
-    WhiteWin,
-    Draw,
 }
 
 fn preamble() {
@@ -300,10 +348,12 @@ $$ |  $$\ $$ |  $$ |$$ |      $$\   $$ |$$\   $$ |
     io::stdin().read_line(&mut input).unwrap();
 }
 
-
-
-
-fn print_board_highlighted(board: &Board, highlight: &[(usize, usize)], title: &str, border_color: Color) {
+fn print_board_highlighted(
+    board: &Board,
+    highlight: &[(usize, usize)],
+    title: &str,
+    border_color: Color,
+) {
     let mut square: u32 = 0;
     const BORDER_LENGTH: i32 = 30;
     let wings = (BORDER_LENGTH - title.len() as i32) / 2;
@@ -324,13 +374,17 @@ fn print_board_highlighted(board: &Board, highlight: &[(usize, usize)], title: &
 
     print!("{}", "┓\n".color(border_color));
 
-    println!("{}    A  B  C  D  E  F  G  H  {}", "┃".color(border_color), "┃".color(border_color));
+    println!(
+        "{}    A  B  C  D  E  F  G  H  {}",
+        "┃".color(border_color),
+        "┃".color(border_color)
+    );
 
     // prints from bottom to top
     for i in (0..SIZE).rev() {
         // offset grid by 1 each row to get proper checkerboard
         square += 1;
-        print!("{} {} ", "┃".color(border_color),i + 1);
+        print!("{} {} ", "┃".color(border_color), i + 1);
         for j in 0..SIZE {
             let piece = board.get_piece_at_pos((i, j));
 
@@ -342,7 +396,7 @@ fn print_board_highlighted(board: &Board, highlight: &[(usize, usize)], title: &
                 },
                 None => Color::White,
             };
-            let text = format!(" {} ", piece.symbol());
+            let text = format!(" {} ", piece.display());
 
             // select background color
             let mut background = Color::Cyan;

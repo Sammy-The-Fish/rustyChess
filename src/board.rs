@@ -1,11 +1,40 @@
+use std::{collections::HashMap, hash::Hash};
+
 use crate::{
-    GameResult, PieceColor, Pieces, Pos, SIZE,
+    PieceColor, Pieces, Pos, SIZE,
     pieces::{self, Move, MoveType},
 };
 
+pub enum GameResult {
+    BlackWin,
+    WhiteWin,
+    Draw { reason: DrawReason },
+}
+
+pub enum DrawReason {
+    Stalemate,
+    Agreed,
+    ThreefoldRepeat,
+    FivefoldRepeat,
+    InsufficientMaterial,
+    FiftyMoves,
+    SeventyFiveMoves,
+}
+
 pub struct Board {
     board: [[Pieces; SIZE]; SIZE],
+    moves: i32,
+    last_capture: i32,
+    history: HashMap<BoardState, i32>,
 }
+
+#[derive(PartialEq, Eq, Hash)]
+struct BoardState {
+    state: [[i32; SIZE]; SIZE],
+    is_white_turn: bool,
+}
+
+impl Eq for PieceColor {}
 
 impl Board {
     pub fn new() -> Board {
@@ -90,7 +119,12 @@ impl Board {
 
         // board modifications to make testing easier
 
-        Board { board }
+        Board {
+            board,
+            moves: 0,
+            last_capture: 0,
+            history: HashMap::new(),
+        }
     }
     // might implement get_king better later
     pub fn get_king_position(&self, side: &PieceColor) -> Pos {
@@ -157,15 +191,111 @@ impl Board {
 
         // stalemate
         if !valid_moves {
-            return Some(GameResult::Draw);
+            return Some(GameResult::Draw {
+                reason: DrawReason::Stalemate,
+            });
+        }
+
+        self.check_forced_draw_cons()
+    }
+
+    pub fn check_claimed_draw_cons(&self) -> Option<GameResult> {
+        // threefold repetition
+        let Some(max) = self.history.values().max() else {
+            return None;
+        };
+
+        if *max >= 3 {
+            return Some(GameResult::Draw {
+                reason: DrawReason::ThreefoldRepeat,
+            });
+        }
+
+        // 50 moves
+        if self.moves - self.last_capture >= 100 {
+            return Some(GameResult::Draw {
+                reason: DrawReason::FiftyMoves,
+            });
+        }
+
+        None
+    }
+
+    pub fn check_forced_draw_cons(&self) -> Option<GameResult> {
+        // fivefold repetition
+        let Some(max) = self.history.values().max() else {
+            return None;
+        };
+
+        if *max >= 5 {
+            return Some(GameResult::Draw {
+                reason: DrawReason::FivefoldRepeat,
+            });
+        }
+
+        // 75 moves
+        if self.moves - self.last_capture >= 100 {
+            return Some(GameResult::Draw {
+                reason: DrawReason::SeventyFiveMoves,
+            });
+        }
+
+        if self.insufficient_material() {
+            return Some(GameResult::Draw {
+                reason: DrawReason::InsufficientMaterial,
+            });
         }
         None
+    }
+
+    pub fn insufficient_material(&self) -> bool {
+        let mut pawns = 0;
+        let mut rooks = 0;
+        let mut knights = 0;
+        let mut bishops = 0;
+        let mut queens = 0;
+
+        let mut pieces = self.get_all_pieces(&PieceColor::White);
+        pieces.extend(self.get_all_pieces(&PieceColor::Black));
+
+        for piece in pieces {
+            match self.get_piece_at_pos(piece) {
+                Pieces::Pawn { .. } => pawns += 1,
+                Pieces::Rook { .. } => rooks += 1,
+                Pieces::Knight { .. } => knights += 1,
+                Pieces::Bishop { .. } => bishops += 1,
+                Pieces::Queen { .. } => queens += 1,
+                _ => (),
+            }
+        }
+
+        if !(pawns == 0 && rooks == 0 && queens == 0) {
+            return false;
+        }
+
+        // just kings
+        if knights == 0 && bishops == 0 {
+            return true;
+        }
+
+        // a king and a bishop
+        if bishops == 1 && knights == 0 {
+            return true;
+        }
+
+        // a king and a knight
+        if knights == 1 && bishops == 0 {
+            return true;
+        }
+
+        // TODO: need to implement more nuanced cases e.g. K + B v K + B
+        false
     }
 
     pub fn is_checked(&self, side: &PieceColor) -> bool {
         let king = self.get_king_position(side);
         if pieces::is_pos_checked(king, &self, side) {
-            return true
+            return true;
         }
         false
     }
@@ -185,10 +315,19 @@ impl Board {
         let from_piece = self.get_mut_piece_at_pos(from);
         from_piece.on_move(from, to);
 
+        self.moves += 1;
+
+        let destination_empty = matches!(self.get_piece_at_pos(to), Pieces::Empty);
+
+        if destination_empty {
+            self.last_capture = self.moves;
+        }
+
         let from_piece: &Pieces = self.get_piece_at_pos(from);
         let to_piece = self.get_piece_at_pos(to);
-
         let from_colour = from_piece.color().unwrap();
+        let is_white = *from_colour == PieceColor::White;
+
         match piece_move.move_type {
             MoveType::Normal => {
                 if let Some(to_color) = to_piece.color() {
@@ -273,6 +412,23 @@ impl Board {
                 self.board[to.0][to.1] = promoted_piece;
             }
         }
+        // add new position to history
+        let mut state = [[0; SIZE]; SIZE];
+
+        for i in 0..SIZE {
+            for j in 0..SIZE {
+                state[i][j] = hash_piece(self.get_piece_at_pos((i as usize, j as usize)))
+            }
+        }
+        let board_state = BoardState {
+            state,
+            is_white_turn: is_white,
+        };
+
+        self.history
+            .entry(board_state)
+            .and_modify(|count| *count += 1)
+            .or_insert(1);
     }
 }
 
@@ -287,4 +443,87 @@ pub fn add_positions(pos1: Pos, pos2: (isize, isize)) -> Option<Pos> {
     }
 
     Some((result.0 as usize, result.1 as usize))
+}
+
+// provides a unique number for each piece
+fn hash_piece(piece: &Pieces) -> i32 {
+    const EMPTY: i32 = 0;
+    const PAWN: i32 = 1;
+    const ROOK: i32 = 3;
+    const KNIGHT: i32 = 5;
+    const BISHOP: i32 = 7;
+    const QUEEN: i32 = 9;
+    const KING: i32 = 11;
+
+    const BLACK_MOD: i32 = 1;
+    const FIRST_MOVE_MOD: i32 = 100;
+    const JUST_JUMPED_MOD: i32 = 1000;
+
+    match piece {
+        Pieces::Empty => EMPTY,
+        Pieces::Pawn {
+            side,
+            is_first_move: _,
+            has_just_jumped,
+        } => {
+            let mut result = PAWN;
+            if *side == PieceColor::Black {
+                result += BLACK_MOD;
+            }
+            if *has_just_jumped {
+                return result;
+            } else {
+                return result + JUST_JUMPED_MOD;
+            };
+        }
+        Pieces::Rook {
+            side,
+            is_first_move,
+        } => {
+            let mut result = ROOK;
+            if *side == PieceColor::Black {
+                result += BLACK_MOD;
+            }
+            if *is_first_move {
+                return result;
+            } else {
+                return result + FIRST_MOVE_MOD;
+            };
+        }
+        Pieces::Knight { side } => {
+            if *side == PieceColor::Black {
+                return KNIGHT + BLACK_MOD;
+            } else {
+                KNIGHT
+            }
+        }
+        Pieces::Bishop { side } => {
+            if *side == PieceColor::Black {
+                return BISHOP + BLACK_MOD;
+            } else {
+                BISHOP
+            }
+        }
+        Pieces::Queen { side } => {
+            if *side == PieceColor::Black {
+                return QUEEN + BLACK_MOD;
+            } else {
+                QUEEN
+            }
+        }
+        Pieces::King {
+            side,
+            is_first_move,
+        } => {
+            let mut result = KING;
+            if *side == PieceColor::Black {
+                result += BLACK_MOD;
+            }
+            if *is_first_move {
+                return result;
+            } else {
+                return result + FIRST_MOVE_MOD;
+            };
+        }
+    }
 }
