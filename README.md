@@ -1,5 +1,7 @@
 # Rusty Chess
 Chess for your terminal built in rust!
+
+
 ![screenshot of feature](/screenshots/selction.png)
 
 
@@ -13,10 +15,16 @@ Moving pieces separated into 2 stages:
 
 # Features
  - Shows available moves when selecting a piece
+
+
  ![screenshot of feature](/screenshots/move.png)
- - Check checker works in all scenarios
+ - Check checker works in all scenarios (e.g. when moving a piece to block check)
+
+
  ![screenshot of feature](/screenshots/check.png)
  - Checkmate and stalemate are implemented
+
+
 ![screenshot of checkmate](/screenshots/checkmate.png)
 ![screenshot of stalemate](/screenshots/stalemate.png)
 # To-Do
